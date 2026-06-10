@@ -242,6 +242,7 @@
       <div class="period-badge" id="period-label">2024年 通期</div>
     </div>
     <div class="topbar-right">
+      <div id="sync-status" style="font-size:12px; color:var(--text2)"></div>
       <select class="year-sel" onchange="switchYear(this.value)">
         <option value="2024">2024年</option>
         <option value="2023">2023年</option>
@@ -869,11 +870,61 @@ function switchTab(name, btn) {
 }
 
 // ─── INIT ───
-function init() {
+async function init() {
   updateKPIs(); updatePLTable(); buildCharts(); buildInputTable();
   const gsUrl = localStorage.getItem('gs_url');
   if (gsUrl) document.getElementById('gs-url').value = gsUrl;
+
+  if (gsUrl) {
+    // URLが保存済みなら自動でスプシから最新データを取得
+    showSyncStatus('loading');
+    try {
+      const res = await fetch(gsUrl);
+      const json = await res.json();
+
+      if (json.monthLabels && json.monthLabels.length >= 12)
+        D._monthLabels = json.monthLabels.slice(0, 12);
+      if (json.revTotal)    D.revenue = json.revTotal.slice(0, 12);
+      if (json.cogsTotal)   D.cogs    = json.cogsTotal.slice(0, 12);
+      if (json.grossProfit) {
+        D.expense = D.revenue.map((r, i) => 0);
+      }
+      if (json.revItems && json.revItems.length > 0) {
+        D.revBreakdown = {};
+        json.revItems.forEach(item => {
+          const total = item.values.reduce((a,b) => a+b, 0);
+          if (total > 0) D.revBreakdown[item.name] = Math.round(total);
+        });
+      }
+      if (json.cogItems && json.cogItems.length > 0) {
+        D.expCats = {};
+        json.cogItems.forEach(item => {
+          const total = item.values.reduce((a,b) => a+b, 0);
+          if (total > 0) D.expCats[item.name] = Math.round(total);
+        });
+      }
+      buildInputTable(); updateKPIs(); updatePLTable(); buildCharts();
+      showSyncStatus('ok');
+    } catch(e) {
+      showSyncStatus('error');
+    }
+  }
+
   loadAdvisor();
+}
+
+function showSyncStatus(state) {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  if (state === 'loading') {
+    el.innerHTML = '<span style="color:var(--amber)">⟳ スプレッドシートから取得中...</span>';
+  } else if (state === 'ok') {
+    const now = new Date();
+    const ts = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = '<span style="color:var(--green)">✓ ' + ts + ' 更新済み</span>';
+  } else {
+    el.innerHTML = '<span style="color:var(--red)">✗ 取得失敗 — <button onclick="openGsModal()" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:12px;text-decoration:underline">設定を確認</button></span>';
+  }
 }
 
 document.getElementById('pw-input').addEventListener('keydown', e => {
