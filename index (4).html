@@ -230,7 +230,7 @@
     <input type="password" id="pw-input" placeholder="パスワードを入力" onkeydown="if(event.key==='Enter')tryLogin()">
     <button class="login-btn" onclick="tryLogin()">ログイン</button>
     <div class="login-err" id="login-err"></div>
-    <div class="login-hint">※ デモ用パスワード: <code>demo1234</code><br>本番では config.js で変更してください</div>
+    <div class="login-hint">プライベートリポジトリ専用</div>
   </div>
 </div>
 
@@ -408,29 +408,67 @@
 <div class="modal-overlay" id="gs-modal">
   <div class="modal">
     <button class="modal-close" onclick="closeGsModal()">✕</button>
-    <h2>📊 Google スプレッドシート連携</h2>
-    <p>Google Apps Script を使って、スプレッドシートのデータを自動でこのダッシュボードに読み込めます。</p>
+    <h2>📊 スプレッドシート連携設定</h2>
+    <p>「単年度事業計画実績値」シートのデータを自動で読み込みます。Apps Script を一度設定するだけでOKです。</p>
 
     <p><span class="step-num">1</span>スプレッドシートを開き、<strong>拡張機能 → Apps Script</strong> を選択</p>
-    <p><span class="step-num">2</span>以下のコードを貼り付けて保存</p>
-    <div class="code-block">function doGet() {
+    <p><span class="step-num">2</span>下のコードを全選択して貼り付け、保存（Cmd+S）</p>
+    <div class="code-block" style="white-space:pre-wrap;font-size:11px">function doGet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName("財務データ");
+  const sheet = ss.getSheetByName("単年度事業計画実績値");
   const data = sheet.getDataRange().getValues();
+  const COL_START = 4;
+  const MONTHS = 12;
+
+  function getRow(rowIdx) {
+    if (rowIdx >= data.length) return Array(MONTHS).fill(0);
+    return data[rowIdx].slice(COL_START, COL_START + MONTHS)
+      .map(v => typeof v === 'number' ? v : (parseFloat(v) || 0));
+  }
+
+  // 売上明細（行4〜17）
+  const revItems = [];
+  for (let r = 3; r <= 16; r++) {
+    if (r >= data.length) break;
+    const row = data[r];
+    const name = (row[1] || row[2] || '').toString().trim();
+    if (!name) continue;
+    const vals = row.slice(COL_START, COL_START + MONTHS)
+      .map(v => typeof v === 'number' ? v : (parseFloat(v) || 0));
+    if (vals.some(v => v !== 0)) revItems.push({ name, values: vals });
+  }
+
+  // 原価明細（行19〜28）
+  const cogItems = [];
+  for (let r = 18; r <= 27; r++) {
+    if (r >= data.length) break;
+    const row = data[r];
+    const name = (row[1] || row[2] || '').toString().trim();
+    if (!name) continue;
+    const vals = row.slice(COL_START, COL_START + MONTHS)
+      .map(v => typeof v === 'number' ? v : (parseFloat(v) || 0));
+    if (vals.some(v => v !== 0)) cogItems.push({ name, values: vals });
+  }
+
+  const result = {
+    monthLabels: data[2] ? data[2].slice(COL_START, COL_START + MONTHS)
+                  .map(v => v.toString()) : [],
+    revTotal:    getRow(17),
+    cogsTotal:   getRow(28),
+    grossProfit: getRow(30),
+    revItems,
+    cogItems,
+  };
+
   return ContentService
-    .createTextOutput(JSON.stringify({ data: data }))
+    .createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
 }</div>
-    <p><span class="step-num">3</span><strong>デプロイ → 新しいデプロイ</strong> を選択し、種類を「ウェブアプリ」に設定。アクセス権を「全員」に設定してデプロイ</p>
-    <p><span class="step-num">4</span>発行されたURLを以下に貼り付けて「保存して読み込む」をクリック</p>
+    <p><span class="step-num">3</span><strong>デプロイ → 新しいデプロイ</strong> → 種類「ウェブアプリ」、アクセス「全員」でデプロイ</p>
+    <p><span class="step-num">4</span>発行されたURLを貼り付けて「読み込む」をクリック</p>
     <input type="text" id="gs-url" placeholder="https://script.google.com/macros/s/..." style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:10px 12px;border-radius:var(--radius-sm);font-size:13px;outline:none;margin-bottom:10px;">
-    <button class="calc-btn" onclick="loadFromSheets()">保存して読み込む</button>
-    <p style="margin-top:1rem;"><strong>スプレッドシートの形式：</strong></p>
-    <div class="code-block">A列: 月（1〜12）
-B列: 売上（万円）
-C列: 仕入・原価（万円）
-D列: 経費（万円）</div>
-    <p style="font-size:11px;color:var(--text3)">※ URLはブラウザのlocalStorageに保存されます。セキュリティに敏感な場合はconfig.jsで管理してください。</p>
+    <button class="calc-btn" onclick="loadFromSheets()">読み込む</button>
+    <p style="margin-top:1rem; font-size:11px; color:var(--text3)">※ URLはlocalStorageに保存。対象シート：「単年度事業計画実績値」</p>
   </div>
 </div>
 
@@ -438,7 +476,7 @@ D列: 経費（万円）</div>
 // ─── CONFIG ───
 // パスワードをここで変更（本番環境では環境変数やサーバー側認証を使用）
 const CONFIG = {
-  password: 'demo1234',
+  password: '1',
   gsUrl: localStorage.getItem('gs_url') || '',
 };
 
@@ -764,19 +802,61 @@ async function loadFromSheets() {
   try {
     const res = await fetch(url);
     const json = await res.json();
-    const rows = json.data.slice(1);
-    rows.forEach((row, i) => {
-      if (i < 12) {
-        D.revenue[i]  = parseFloat(row[1]) || 0;
-        D.cogs[i]     = parseFloat(row[2]) || 0;
-        D.expense[i]  = parseFloat(row[3]) || 0;
-      }
-    });
+
+    // 月ラベルをスプシから取得（8月〜7月など会計年度対応）
+    if (json.monthLabels && json.monthLabels.length >= 12) {
+      D._monthLabels = json.monthLabels.slice(0, 12);
+    }
+
+    // 売上合計・原価合計・粗利
+    if (json.revTotal)    D.revenue = json.revTotal.slice(0, 12);
+    if (json.cogsTotal)   D.cogs    = json.cogsTotal.slice(0, 12);
+
+    // 経費 = 売上合計 - 原価合計 - 売上総利益  (gross = rev - cogs なのでexpenseは別途)
+    // 今回のスプシには経費行がないため、販管費として gross - operating profit を想定
+    // ひとまず原価以外の費用を経費として: expense = rev - cogs - grossProfit は不正確
+    // 実際には grossProfit = rev - cogs なので expense は別行が必要
+    // → 今回はgrossProfitから逆算せず、原価合計をcogsとして扱い、expenseはゼロリセット
+    if (json.grossProfit) {
+      // gross = rev - cogs が正しければ expense は販管費
+      // grossProfit行からoperating profitを差し引けないのでexpenseは0にして
+      // ユーザーが手動で入力するか、スプシに販管費行を追加してもらう
+      D.expense = D.revenue.map((r, i) => {
+        const gross = json.grossProfit[i] !== undefined ? json.grossProfit[i] : (r - D.cogs[i]);
+        return 0; // 販管費データが別途必要
+      });
+    }
+
+    // 売上内訳をrevBreakdownに
+    if (json.revItems && json.revItems.length > 0) {
+      D.revBreakdown = {};
+      json.revItems.forEach(item => {
+        const total = item.values.reduce((a,b) => a+b, 0);
+        if (total > 0) D.revBreakdown[item.name] = Math.round(total);
+      });
+    }
+
+    // 原価内訳をexpCatsに
+    if (json.cogItems && json.cogItems.length > 0) {
+      D.expCats = {};
+      json.cogItems.forEach(item => {
+        const total = item.values.reduce((a,b) => a+b, 0);
+        if (total > 0) D.expCats[item.name] = Math.round(total);
+      });
+    }
+
     buildInputTable(); updateKPIs(); updatePLTable(); buildCharts(); loadAdvisor();
     closeGsModal();
-    alert('スプレッドシートからデータを読み込みました！');
+
+    const hasExpense = D.expense.some(v => v > 0);
+    if (!hasExpense) {
+      alert('✅ データを読み込みました！\n\n⚠️ 販管費（営業費用）の行がスプシに見当たりませんでした。「データ入力」タブから経費を手動で入力するか、スプシに販管費合計行を追加してください。');
+    } else {
+      alert('✅ スプレッドシートからデータを読み込みました！');
+    }
   } catch(e) {
-    alert('読み込みに失敗しました。URLとスプレッドシートの公開設定を確認してください。');
+    console.error(e);
+    alert('❌ 読み込みに失敗しました。\nURLとApps Scriptのデプロイ設定（アクセス権：全員）を確認してください。');
   }
 }
 
